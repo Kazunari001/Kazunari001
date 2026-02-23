@@ -31,24 +31,68 @@ function getSvgSize(svg) {
 }
 
 function buildMonthAxis(svg, id) {
-  const { width, height } = getSvgSize(svg);
-  const y = Math.max(14, height - 8);
-  const startX = 35;
-  const endX = Math.max(startX + 11, width - 35);
-  const step = (endX - startX) / 11;
+  const points = [];
+  const transformRegex = /<g transform="translate\(([\d.]+)\s+([\d.]+)\)">[\s\S]{0,280}?class="cont-top-p\d+-\d+"/g;
+  let match;
+  while ((match = transformRegex.exec(svg)) !== null) {
+    points.push({ x: Number(match[1]), y: Number(match[2]) });
+  }
+
+  if (points.length < 30) {
+    const { width, height } = getSvgSize(svg);
+    const y = Math.max(14, height - 8);
+    const startX = 35;
+    const endX = Math.max(startX + 11, width - 35);
+    const step = (endX - startX) / 11;
+    const labels = monthLabels
+      .map((m, i) => `<text x="${(startX + step * i).toFixed(1)}" y="${y.toFixed(1)}" class="month-label">${m}</text>`)
+      .join('');
+    return `<g id="${id}">${labels}</g>`;
+  }
+
+  const bottomByX = new Map();
+  for (const p of points) {
+    const k = Math.round(p.x);
+    const prev = bottomByX.get(k);
+    if (prev === undefined || p.y > prev) {
+      bottomByX.set(k, p.y);
+    }
+  }
+
+  const xs = Array.from(bottomByX.keys()).sort((a, b) => a - b);
+  if (xs.length < 2) {
+    return '';
+  }
+
+  const startX = xs[0] + 9;
+  const endX = xs[xs.length - 1] + 9;
+  const startY = bottomByX.get(xs[0]) + 22;
+  const endY = bottomByX.get(xs[xs.length - 1]) + 22;
   const labels = monthLabels
-    .map((m, i) => `<text x="${(startX + step * i).toFixed(1)}" y="${y.toFixed(1)}" class="month-label">${m}</text>`)
+    .map((m, i) => {
+      const t = i / 11;
+      const x = startX + (endX - startX) * t;
+      const y = startY + (endY - startY) * t;
+      return `<text x="${x.toFixed(1)}" y="${y.toFixed(1)}" class="month-label">${m}</text>`;
+    })
     .join('');
-  return `<g id="${id}">${labels}</g>`;
+
+  return `<g id="${id}"><line x1="${startX.toFixed(1)}" y1="${startY.toFixed(1)}" x2="${endX.toFixed(1)}" y2="${endY.toFixed(1)}" class="month-axis-line" />${labels}</g>`;
+}
+
+function stripOldMonthAxis(svg) {
+  return svg
+    .replace(/<g id="month-axis-labels">[\s\S]*?<\/g>/g, '')
+    .replace(/<g id="month-labels">[\s\S]*?<\/g>/g, '');
 }
 
 function injectMonthAxis(svg) {
-  if (!svg.includes('</svg>') || svg.includes('id="month-axis-labels"')) {
+  if (!svg.includes('</svg>')) {
     return svg;
   }
 
-  const styleLine = '.month-label { font: 600 10px "Segoe UI", "Noto Sans", sans-serif; fill: #8b949e; text-anchor: middle; }';
-  let out = svg;
+  const styleLine = '.month-label { font: 700 10px "Segoe UI", "Noto Sans", sans-serif; fill: #8b949e; text-anchor: middle; dominant-baseline: middle; } .month-axis-line { stroke: #6e7681; stroke-width: 1.2px; stroke-dasharray: 4 3; opacity: 0.8; }';
+  let out = stripOldMonthAxis(svg);
 
   if (out.includes('<defs>')) {
     out = out.replace('<defs>', `<defs><style>${styleLine}</style>`);
@@ -69,11 +113,12 @@ const defs = [
   '  <style>',
   '    .season-label { font: 700 20px "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", sans-serif; fill: #ffffff; }',
   '    .season-sub { font: 600 13px "Segoe UI", "Noto Sans", sans-serif; fill: #e6edf3; }',
-  '    .month-label { font: 600 10px "Segoe UI", "Noto Sans", sans-serif; fill: #8b949e; text-anchor: middle; }',
+  '    .month-label { font: 700 10px "Segoe UI", "Noto Sans", sans-serif; fill: #8b949e; text-anchor: middle; dominant-baseline: middle; }',
+  '    .month-axis-line { stroke: #6e7681; stroke-width: 1.2px; stroke-dasharray: 4 3; opacity: 0.8; }',
   '  </style>',
   '</defs>',
   `<g transform="translate(16,34)"><rect x="0" y="-18" width="300" height="44" rx="10" fill="#0d1117" opacity="0.80"/><text x="14" y="2" class="season-label">${emoji} ${emoji} ${emoji}</text><text x="14" y="18" class="season-sub">${label}</text></g>`,
-  buildMonthAxis(src, 'month-labels')
+  buildMonthAxis(src, 'month-axis-labels')
 ].join('');
 
 const out = src.includes('</svg>') ? src.replace('</svg>', `${defs}</svg>`) : src + defs;
