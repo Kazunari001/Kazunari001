@@ -1,0 +1,56 @@
+﻿name: GitHub Profile 3D Seasonal Contrib
+
+on:
+  schedule:
+    - cron: "0 0 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Detect season (Northern Hemisphere)
+        id: season
+        shell: bash
+        run: |
+          month="$(date -u +%m)"
+          if [ "$month" = "12" ] || [ "$month" = "01" ] || [ "$month" = "02" ]; then
+            echo "name=winter" >> "$GITHUB_OUTPUT"
+            echo "emoji=❄️" >> "$GITHUB_OUTPUT"
+            echo "label=Winter / Snow" >> "$GITHUB_OUTPUT"
+          elif [ "$month" = "03" ] || [ "$month" = "04" ] || [ "$month" = "05" ]; then
+            echo "name=spring" >> "$GITHUB_OUTPUT"
+            echo "emoji=🌸" >> "$GITHUB_OUTPUT"
+            echo "label=Spring / Sakura" >> "$GITHUB_OUTPUT"
+          elif [ "$month" = "06" ] || [ "$month" = "07" ] || [ "$month" = "08" ]; then
+            echo "name=summer" >> "$GITHUB_OUTPUT"
+            echo "emoji=⭐" >> "$GITHUB_OUTPUT"
+            echo "label=Summer / Star" >> "$GITHUB_OUTPUT"
+          else
+            echo "name=autumn" >> "$GITHUB_OUTPUT"
+            echo "emoji=🍁" >> "$GITHUB_OUTPUT"
+            echo "label=Autumn / Maple" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Generate 3D contribution graph
+        uses: yoshi389111/github-profile-3d-contrib@latest
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          USERNAME: ${{ github.repository_owner }}
+
+      - name: Add seasonal emoji overlay label
+        run: node scripts/seasonal-svg.js "${{ steps.season.outputs.emoji }}" "${{ steps.season.outputs.label }}"
+
+      - name: Commit and push
+        run: |
+          git config user.name github-actions
+          git config user.email github-actions@github.com
+          git add -A
+          if git commit -m "chore: update seasonal 3D contribution graph"; then
+            git push
+          fi
