@@ -1,6 +1,7 @@
 const fs = require('fs');
+const path = require('path');
 
-const emoji = process.argv[2] || '❄️';
+const emoji = process.argv[2] || '\u2744\uFE0F';
 const label = process.argv[3] || 'Season';
 const candidates = [
   'profile-3d-contrib/profile-season-animate.svg',
@@ -9,6 +10,7 @@ const candidates = [
 ];
 const outputPath = 'profile-3d-contrib/profile-seasonal-emoji.svg';
 const inputPath = candidates.find((p) => fs.existsSync(p));
+const targetDir = 'profile-3d-contrib';
 const monthLabels = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 function getSvgSize(svg) {
@@ -28,20 +30,40 @@ function getSvgSize(svg) {
   };
 }
 
+function buildMonthAxis(svg, id) {
+  const { width, height } = getSvgSize(svg);
+  const y = Math.max(14, height - 8);
+  const startX = 35;
+  const endX = Math.max(startX + 11, width - 35);
+  const step = (endX - startX) / 11;
+  const labels = monthLabels
+    .map((m, i) => `<text x="${(startX + step * i).toFixed(1)}" y="${y.toFixed(1)}" class="month-label">${m}</text>`)
+    .join('');
+  return `<g id="${id}">${labels}</g>`;
+}
+
+function injectMonthAxis(svg) {
+  if (!svg.includes('</svg>') || svg.includes('id="month-axis-labels"')) {
+    return svg;
+  }
+
+  const styleLine = '.month-label { font: 600 10px "Segoe UI", "Noto Sans", sans-serif; fill: #8b949e; text-anchor: middle; }';
+  let out = svg;
+
+  if (out.includes('<defs>')) {
+    out = out.replace('<defs>', `<defs><style>${styleLine}</style>`);
+  } else {
+    out = out.replace(/<svg([^>]*)>/i, `<svg$1><defs><style>${styleLine}</style></defs>`);
+  }
+
+  return out.replace('</svg>', `${buildMonthAxis(out, 'month-axis-labels')}</svg>`);
+}
+
 if (!inputPath) {
   throw new Error(`Input SVG not found. Checked: ${candidates.join(', ')}`);
 }
 
 const src = fs.readFileSync(inputPath, 'utf8');
-const { width, height } = getSvgSize(src);
-const monthY = Math.max(14, height - 8);
-const monthStartX = 35;
-const monthEndX = Math.max(monthStartX + 11, width - 35);
-const monthStep = (monthEndX - monthStartX) / 11;
-const months = monthLabels
-  .map((m, i) => `<text x="${(monthStartX + monthStep * i).toFixed(1)}" y="${monthY.toFixed(1)}" class="month-label">${m}</text>`)
-  .join('');
-
 const defs = [
   '<defs>',
   '  <style>',
@@ -51,8 +73,22 @@ const defs = [
   '  </style>',
   '</defs>',
   `<g transform="translate(16,34)"><rect x="0" y="-18" width="300" height="44" rx="10" fill="#0d1117" opacity="0.80"/><text x="14" y="2" class="season-label">${emoji} ${emoji} ${emoji}</text><text x="14" y="18" class="season-sub">${label}</text></g>`,
-  `<g id="month-labels">${months}</g>`
+  buildMonthAxis(src, 'month-labels')
 ].join('');
 
 const out = src.includes('</svg>') ? src.replace('</svg>', `${defs}</svg>`) : src + defs;
 fs.writeFileSync(outputPath, out, 'utf8');
+
+if (fs.existsSync(targetDir)) {
+  const graphFiles = fs.readdirSync(targetDir)
+    .filter((name) => name.endsWith('.svg') && name.startsWith('profile-'))
+    .map((name) => path.join(targetDir, name));
+
+  for (const filePath of graphFiles) {
+    const original = fs.readFileSync(filePath, 'utf8');
+    const withAxis = injectMonthAxis(original);
+    if (withAxis !== original) {
+      fs.writeFileSync(filePath, withAxis, 'utf8');
+    }
+  }
+}
