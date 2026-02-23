@@ -66,6 +66,63 @@ function escapeXml(s) {
     .replace(/'/g, '&apos;');
 }
 
+function inferSeason(labelText, range) {
+  const t = (labelText || '').toLowerCase();
+  if (/(winter|snow|\u51ac)/i.test(t)) return 'winter';
+  if (/(spring|sakura|cherry|\u6625|\u685c)/i.test(t)) return 'spring';
+  if (/(summer|star|night|\u590f|\u661f)/i.test(t)) return 'summer';
+  if (/(autumn|fall|leaf|\u79cb|\u7d05\u8449)/i.test(t)) return 'autumn';
+
+  const base = range ? range.end : new Date();
+  const m = base.getUTCMonth() + 1;
+  if (m === 12 || m <= 2) return 'winter';
+  if (m <= 5) return 'spring';
+  if (m <= 8) return 'summer';
+  return 'autumn';
+}
+
+function buildSeasonParticles(season, width, height) {
+  const out = [];
+  const count = 24;
+  for (let i = 0; i < count; i += 1) {
+    const x = 16 + ((i * 41) % Math.max(120, width - 32));
+    const drift = (i % 2 === 0 ? 7 : -7);
+    const dur = 8 + (i % 7);
+    const begin = -(i % 9);
+
+    if (season === 'winter') {
+      const r = 1.6 + ((i % 4) * 0.45);
+      const opacity = 0.25 + ((i % 5) * 0.1);
+      out.push(
+        `<circle cx="${x}" cy="-18" r="${r.toFixed(2)}" fill="#b6d7ff" opacity="${opacity.toFixed(2)}">` +
+          `<animate attributeName="cy" values="-18;${height + 18}" dur="${dur}s" begin="${begin}s" repeatCount="indefinite" />` +
+          `<animate attributeName="cx" values="${x};${x + drift};${x - drift};${x}" dur="${Math.max(4, dur - 2)}s" begin="${begin}s" repeatCount="indefinite" />` +
+        '</circle>'
+      );
+      continue;
+    }
+
+    const glyph = season === 'spring'
+      ? '\uD83C\uDF38'
+      : season === 'summer'
+        ? '\u2B50'
+        : '\uD83C\uDF41';
+    const color = season === 'spring' ? '#f472b6' : season === 'summer' ? '#facc15' : '#fb923c';
+    const size = 10 + (i % 4) * 2;
+    const rotate = (i % 2 === 0 ? 180 : -180);
+    const spinDur = 5 + (i % 6);
+    const opacity = season === 'summer' ? (0.35 + (i % 4) * 0.12) : (0.45 + (i % 4) * 0.1);
+    out.push(
+      `<text x="${x}" y="-20" font-size="${size}" fill="${color}" opacity="${opacity.toFixed(2)}" text-anchor="middle">${glyph}` +
+        `<animate attributeName="y" values="-20;${height + 22}" dur="${dur}s" begin="${begin}s" repeatCount="indefinite" />` +
+        `<animate attributeName="x" values="${x};${x + drift};${x - drift};${x}" dur="${Math.max(4, dur - 2)}s" begin="${begin}s" repeatCount="indefinite" />` +
+        `<animateTransform attributeName="transform" type="rotate" values="0 ${x} 0;${rotate} ${x} ${Math.floor(height / 2)}" dur="${spinDur}s" begin="${begin}s" repeatCount="indefinite" />` +
+      '</text>'
+    );
+  }
+  return out.join('');
+}
+
 function extract3dCells(svg) {
   const re = /<g transform="translate\(([\d.]+)\s+([\d.]+)\)">[\s\S]{0,340}?class="cont-top(?:-p\d+)?-(\d+)"/g;
   const cells = [];
@@ -130,13 +187,14 @@ function render2dHeatmap(src) {
   const cell = 14;
   const gap = 4;
   const left = 58;
-  const top = 52;
+  const top = 34;
   const gridWidth = cols * (cell + gap) - gap;
   const gridHeight = rows * (cell + gap) - gap;
   const width = left + gridWidth + 40;
-  const height = top + gridHeight + 58;
+  const height = top + gridHeight + 40;
   const palette = ['#ebedf0', '#9be9a8', '#40c463', '#30a14e', '#216e39'];
   const monthTicks = buildMonthTicks(range, cols);
+  const season = inferSeason(label, range);
 
   const rects = [];
   for (let x = 0; x < cols; x += 1) {
@@ -162,17 +220,16 @@ function render2dHeatmap(src) {
     `<text x="${left - 36}" y="${top + (cell + gap) * 6 + cell - 2}" class="sub">Sat</text>`
   ].join('');
 
-  const period = range ? range.text : '';
+  const particles = buildSeasonParticles(season, width, height);
+
   return [
     `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">`,
     '<style>',
-    '  .title { font: 700 16px "Segoe UI", "Noto Sans", sans-serif; fill: #24292f; }',
     '  .sub { font: 600 11px "Segoe UI", "Noto Sans", sans-serif; fill: #57606a; }',
     '  .month { font: 600 10px "Segoe UI", "Noto Sans", sans-serif; fill: #57606a; }',
     '</style>',
     `<rect x="0" y="0" width="${width}" height="${height}" fill="#ffffff" />`,
-    `<text x="${left}" y="20" class="title">${escapeXml(emoji)} ${escapeXml(label)} 2D</text>`,
-    period ? `<text x="${left}" y="34" class="sub">${escapeXml(period)}</text>` : '',
+    `<g id="season-particles">${particles}</g>`,
     weekdays,
     ...rects,
     months,
